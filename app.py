@@ -1,12 +1,17 @@
-import streamlit as st
+from flask import Flask, request, jsonify, render_template
+import pickle as pkl
 import numpy as np
 import pandas as pd
-import pickle as pkl
 from scipy.stats import t
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
-from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
+
+from EDEMANAGBAH_SportsPrediction import ytest
+
+# Create Flask app
+app = Flask(__name__)
 
 # Load the trained model
 with open('best_model.pkl', 'rb') as model_file:
@@ -40,39 +45,59 @@ def calculate_confidence(input_data):
         confidence_score = 0.5
     return confidence_score
 
-# Streamlit app
-st.title("Player Rating Prediction")
-st.write("Enter the player attributes below:")
+@app.route("/")
+def Home():
+    return render_template("index.html")
 
-potential = st.number_input("Potential (in %)", min_value=0.0, max_value=100.0, step=0.1)
-passing = st.number_input("Passing (in %)", min_value=0.0, max_value=100.0, step=0.1)
-dribbling = st.number_input("Dribbling (in %)", min_value=0.0, max_value=100.0, step=0.1)
-movement_reactions = st.number_input("Movement Reactions (in %)", min_value=0.0, max_value=100.0, step=0.1)
+@app.route('/predict', methods=['POST'])
+def predict():
+    try:
+        # Collect the input features
+        float_features = [float(request.form[feature])/100.0 * max_observed_value for feature in relevant_features]
+        features = np.array(float_features).reshape(1, -1)
 
-if st.button("Predict"):
-    # Collect the input features
-    float_features = [
-        float(potential)/100.0 * max_observed_value,
-        float(passing)/100.0 * max_observed_value,
-        float(dribbling)/100.0 * max_observed_value,
-        float(movement_reactions)/100.0 * max_observed_value
-    ]
-    features = np.array(float_features).reshape(1, -1)
+        # Convert to DataFrame with the correct feature names
+        features_df = pd.DataFrame(features, columns=relevant_features)
 
-    # Convert to DataFrame with the correct feature names
-    features_df = pd.DataFrame(features, columns=relevant_features)
+        # Predict using the model
+        prediction = model.predict(features_df)[0]
 
-    # Predict using the model
-    prediction = model.predict(features_df)[0]
+        # Scale the prediction back to a percentage
+        prediction_percentage = (prediction / max_observed_value) * 100
 
-    # Scale the prediction back to a percentage
-    prediction_percentage = (prediction / max_observed_value) * 100
+        # Calculate confidence score
+        confidence_score = calculate_confidence(features_df)
 
-    # Calculate confidence score
-    confidence_score = calculate_confidence(features_df)
+        # Render the result
+        return render_template("index.html", prediction_text=f"The overall player rating (in %) is {prediction_percentage:.2f}", confidence_text=f"Confidence Score: {confidence_score:.2f}")
+    except Exception as e:
+        # Handle errors if any
+        return render_template("index.html", prediction_text=f"Error: {str(e)}")
 
-    st.write(f"The overall player rating (in %) is {prediction_percentage:.2f}")
-    st.write(f"Confidence Score: {confidence_score:.2f}")
+@app.route('/api/predict', methods=['POST'])
+def api_predict():
+    try:
+        # Collect the input features
+        float_features = [float(request.json[feature])/100.0 * max_observed_value  for feature in relevant_features]
+        features = np.array(float_features).reshape(1, -1)
 
-# To run the app, use the following command in your terminal:
-# streamlit run app.py
+        # Convert to DataFrame with the correct feature names
+        features_df = pd.DataFrame(features, columns=relevant_features)
+
+        # Predict using the model
+        prediction = model.predict(features_df)[0]
+
+        # Scale the prediction back to a percentage
+        prediction_percentage = (prediction / max_observed_value) * 100
+
+        # Calculate confidence score
+        confidence_score = calculate_confidence(features_df)
+
+        # Return the prediction as a JSON response
+        return jsonify({"prediction": round(prediction_percentage,2), "Confidence Score": round(confidence_score,2)})
+    except Exception as e:
+        # Handle errors if any
+        return jsonify({"error": str(e)}), 400
+
+if __name__ == '__main__':
+    app.run(debug=True)
