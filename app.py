@@ -63,7 +63,7 @@ float_features = [
     st.number_input(feature, min_value=0.0, max_value=100.0)
     / 100.0
     * max_observed_value
-    for feature in displayable_features
+    for feature in relevant_features
 ]
 features = np.array(float_features).reshape(1, -1)
 
